@@ -1,178 +1,151 @@
 package cmd
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"bufio"
 	"fmt"
+	"log"
 	"os"
-	"strings"
-	"time"
+	"strconv"
 
-	"github.com/google/uuid"
+	"github.com/jeehoon/graylog-cli/pkg/graylog"
 	"github.com/jeehoon/graylog-cli/pkg/graylog/client"
 	"github.com/spf13/cobra"
 )
-
-func randomHex(n int) (string, error) {
-	bytes := make([]byte, n)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
-}
-
-// searchCmd represents the search command
-var searchCmd = &cobra.Command{
-	Use:   "search",
-	Short: "A brief description of your command",
-	Run: func(cmd *cobra.Command, args []string) {
-		cfg := &client.Config{
-			Verbose:  Verbose,
-			Endpoint: ServerEndpoint,
-			Username: Username,
-			Password: Password,
-		}
-
-		graylog := client.NewClient(cfg)
-
-		requestId, _ := randomHex(12)
-		queryId := uuid.New().String()
-		messageId := uuid.New().String()
-		histogramId := uuid.New().String()
-		termsId := uuid.New().String()
-
-		q := "*"
-		if len(args) != 0 {
-			q = args[0]
-		}
-
-		req := client.NewSearchRequest(requestId)
-		query := client.NewSearchQuery(queryId)
-		query.SetQuery(q)
-
-		if SearchFrom != "" && SearchTo != "" {
-			query.SetTimerangeAbsolute(SearchFrom, SearchTo)
-		} else {
-			duration, err := ParseDuration(SearchRange)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "ERROR: %v", err)
-				os.Exit(1)
-			}
-			query.SetTimerangeRelative(int(duration / time.Second))
-		}
-
-		if Histogram {
-			query.AppendSearchHistogram(histogramId)
-		} else if TermsTop != "" {
-			query.AppendSearchTop(termsId, TermsTop, 20)
-		} else {
-			query.AppendSearchMessage(messageId, Limit, Offset, Sort)
-		}
-
-		req.AddQuery(query)
-
-		// Search
-		if err := graylog.Post("/api/views/search", req, nil); err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: %v", err)
-			os.Exit(1)
-		}
-
-		// Execute
-		var resp *client.SearchResponse
-
-		if err := graylog.Post("/api/views/search/"+requestId+"/execute", nil, &resp); err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: %v", err)
-			os.Exit(1)
-		}
-
-		// Search Status
-		for !resp.Execution.Done {
-			path := fmt.Sprintf("/api/views/searchjobs/%v/%v/status", resp.ExecutingNode, resp.Id)
-			if err := graylog.Get(path, nil, &resp); err != nil {
-				fmt.Fprintf(os.Stderr, "ERROR: %v", err)
-				os.Exit(1)
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
-
-		dec := client.NewDecoder(DecoderConfig)
-
-		result, has := resp.Results[queryId]
-		if !has {
-			fmt.Fprintf(os.Stderr, "ERROR: not found query result of %v", queryId)
-			os.Exit(1)
-		}
-
-		useColor := UseColor()
-
-		if typ, has := result.SearchTypes[messageId]; has {
-			for idx := len(typ.Messages) - 1; idx >= 0; idx-- {
-				msg := typ.Messages[idx]
-				fmt.Println(client.Render(dec, useColor, msg.Message))
-			}
-			fmt.Printf("========== Messages ==========\n")
-			fmt.Printf("= Range: %v ~ %v\n", typ.EffectiveTimerange.From, typ.EffectiveTimerange.To)
-			fmt.Printf("= Total: %v\n", typ.TotalResults)
-		}
-
-		if typ, has := result.SearchTypes[termsId]; has {
-
-			labels := []string{}
-			data := []float64{}
-
-			for _, row := range typ.Rows {
-				if len(row.Key) == 0 {
-					continue
-				}
-
-				key := row.Key[0]
-				value := row.Values[0].Value
-				labels = append(labels, key)
-				data = append(data, value)
-			}
-
-			Chart(labels, data, Tick)
-			fmt.Printf("========== Top Values of [%v] field ==========\n", TermsTop)
-			fmt.Printf("= Range: %v ~ %v\n", typ.EffectiveTimerange.From, typ.EffectiveTimerange.To)
-			fmt.Printf("= Total: %v\n", typ.Total)
-		}
-
-		if typ, has := result.SearchTypes[histogramId]; has {
-
-			labels := []string{}
-			data := []float64{}
-
-			for _, row := range typ.Rows {
-				if len(row.Key) == 0 {
-					continue
-				}
-
-				key := row.Key[0]
-				value := row.Values[0].Value
-				labels = append(labels, key)
-				data = append(data, value)
-			}
-
-			Chart(labels, data, Tick)
-			fmt.Printf("========== Histogram ==========\n")
-			fmt.Printf("= Range: %v ~ %v\n", typ.EffectiveTimerange.From, typ.EffectiveTimerange.To)
-			fmt.Printf("= Total: %v\n", typ.Total)
-		}
-		fmt.Printf("= State: %v\n", result.State)
-		if len(result.Errors) != 0 {
-			fmt.Printf("= Errors: %v\n", result.Errors)
-		}
-		fmt.Printf("= Query: %v\n", result.Query.Query.QueryString)
-		fmt.Println()
-
-	},
-}
 
 var (
 	Histogram = false
 	TermsTop  = ""
 	Tick      = "■"
 )
+
+// searchCmd represents the search command
+var searchCmd = &cobra.Command{
+	Use:   "search",
+	Short: "A brief description of your command",
+	Run:   search,
+}
+
+func search(cmd *cobra.Command, args []string) {
+	cfg := &client.Config{
+		Verbose:  Verbose,
+		Endpoint: ServerEndpoint,
+		Username: Username,
+		Password: Password,
+	}
+
+	q := "*"
+	if len(args) != 0 {
+		q = args[0]
+	}
+
+	qreq := graylog.NewQueryRequest(cfg, "", q)
+
+	qreq.PageLimit = Limit
+	qreq.Offset = Offset
+
+	if SearchFrom != "" && SearchTo != "" {
+		qreq.SearchTimeRange.TimeType = graylog.TimeTypeAbsolute
+		qreq.SearchTimeRange.AbsoluteStart = SearchFrom
+		qreq.SearchTimeRange.AbsoluteEnd = SearchTo
+	} else {
+		qreq.SearchTimeRange.TimeType = graylog.TimeTypeRelative
+		qreq.SearchTimeRange.RelativeRange = SearchRange
+	}
+
+	if Histogram {
+		qreq.QueryType = graylog.QueryTypeHistogram
+	} else if TermsTop != "" {
+		qreq.QueryType = graylog.QueryTypeFieldTop
+		qreq.TopFieldName = TermsTop
+	} else {
+		qreq.QueryType = graylog.QueryTypeMessage
+	}
+
+	var msgCnt, total uint64
+
+	for {
+		if qreq.Offset < 0 {
+			qreq.Offset = 0
+		}
+
+		msgCnt = 0
+		total = 0
+
+		res, err := graylog.Search(cfg, qreq)
+		if err != nil {
+			log.Printf("failed to search Graylog: err=%v", err)
+			return
+		}
+
+		if Histogram {
+			graylog.PrintHistogram(res, qreq.MessageId, Tick)
+			Pagination = false
+		} else if TermsTop != "" {
+			qreq.QueryType = graylog.QueryTypeFieldTop
+			qreq.TopFieldName = TermsTop
+			graylog.PrintTop(res, qreq.MessageId, qreq.TopFieldName, Tick)
+			Pagination = false
+		} else {
+			msgCnt, total = graylog.PrintMessage(qreq, res, DecoderConfig)
+		}
+
+		graylog.PrintSummary(res)
+
+		if !Pagination {
+			break
+		} else if uint64(qreq.Offset)+msgCnt >= total {
+			// end of result
+			break
+		} else if !navigatePage(qreq, total, msgCnt) {
+			break
+		}
+	}
+}
+
+func navigatePage(qreq *graylog.QueryRequest, total uint64, msgCnt uint64) bool {
+	// navigate the pages
+START:
+	key, err := waitUserKeyInput()
+	if err != nil {
+		log.Printf("failed to wait key: err=%v", err)
+		return false
+	}
+
+	if key == "n" {
+		qreq.Offset += Limit
+		if uint64(qreq.Offset) >= total {
+			return false
+		} else {
+			return true
+		}
+	} else if key == "b" {
+		if qreq.Offset < 1 {
+			fmt.Printf("The first page\n")
+			goto START
+		} else {
+			qreq.Offset -= int(msgCnt)
+			return true
+		}
+	} else if b, _ := strconv.Atoi(key); b > 0 {
+		qreq.Offset = (b - 1) * qreq.PageLimit
+		return true
+	}
+
+	return false
+}
+
+func waitUserKeyInput() (string, error) {
+	var text string
+
+	fmt.Print("Inputkey[n(ext),b(ack),q(uit),(page)num]: ")
+	scanner := bufio.NewScanner(os.Stdin)
+
+	if scanner.Scan() {
+		text = scanner.Text()
+	}
+
+	return text, nil
+}
 
 func init() {
 	rootCmd.AddCommand(searchCmd)
@@ -182,6 +155,7 @@ func init() {
 	searchCmd.Flags().IntVar(&Offset, "offset", Offset, "")
 	searchCmd.Flags().IntVar(&Limit, "limit", Limit, "")
 	searchCmd.Flags().StringVar(&Sort, "sort", Sort, "")
+	searchCmd.Flags().BoolVarP(&Pagination, "page", "p", Pagination, "Pagination")
 
 	// Search
 	searchCmd.Flags().StringSliceVar(&DecoderConfig.HostnameKeys, "hostname", DecoderConfig.HostnameKeys, "")
@@ -195,43 +169,4 @@ func init() {
 	searchCmd.Flags().BoolVarP(&Histogram, "histogram", "H", Histogram, "")
 	searchCmd.Flags().StringVarP(&TermsTop, "top", "T", TermsTop, "")
 	searchCmd.Flags().StringVar(&Tick, "tick", Tick, "")
-}
-
-func Chart(labels []string, data []float64, tick string) {
-	length := len(labels)
-	if len(labels) > len(data) {
-		length = len(data)
-	}
-
-	var file = os.Stdout
-	var maxLabelLength int
-	var maxValue float64
-
-	for i := 0; i < length; i++ {
-		label := labels[i]
-		value := data[i]
-		if maxLabelLength < len(label) {
-			maxLabelLength = len(label)
-		}
-
-		if maxValue < value {
-			maxValue = value
-		}
-	}
-
-	maxBarLength := float64(50)
-	labelFmt := fmt.Sprintf("%%%ds", maxLabelLength)
-
-	for i := 0; i < length; i++ {
-		label := labels[i]
-		value := data[i]
-
-		barLength := (value / maxValue) * maxBarLength
-		bar := strings.Repeat(tick, int(barLength))
-
-		s := fmt.Sprintf(labelFmt+":%s %.3f", label, bar, value)
-		s = strings.TrimRight(s, "0")
-		s = strings.TrimRight(s, ".")
-		fmt.Fprintln(file, s)
-	}
 }

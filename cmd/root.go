@@ -27,8 +27,9 @@ var (
 	Username       = ""
 	Password       = ""
 	Offset         = 0
-	Limit          = 150
+	Limit          = 100
 	Sort           = "timestamp:DESC"
+	Pagination     = false
 	Verbose        = false
 
 	DecoderConfig = &client.DecoderConfig{
