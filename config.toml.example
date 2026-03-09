@@ -1,0 +1,34 @@
+
+### config for graylog-cli
+### ~/.config/graylog.toml
+
+[GraylogEndpoint]
+	[GraylogEndpoint.dev2]
+		url ="https://plogs-dev2.eu-central-1.samsungspc.com"
+		user-token = "my_graylog_token"
+
+	[GraylogEndpoint.stg2]
+		url="https://plogs-stg2.eu-central-1.samsungspc.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.ppd2]
+		url="https://plogs-ppd2.eu-central-1.samsungspc.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-eu]
+		url="https://plogs.eu-central-1.samsungspc.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-kr]
+		url="https://plogs.ap-northeast-1.samsungspc.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-sg]
+		url="https://plogs.ap-southeast-1.samsungspc.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-us]
+		url="https://plogs.us-east-1.samsungspc.com"
+		user-token="my_graylog_token"
+
+

@@ -25,12 +25,44 @@ var searchCmd = &cobra.Command{
 	Run:   search,
 }
 
+func getGraylogConfig() *GraylogLogin {
+	cfg, ok := graylogCliConfig.GraylogEndpoint[Tier]
+	if !ok {
+		return &GraylogLogin{}
+	}
+
+	return cfg
+}
+
 func search(cmd *cobra.Command, args []string) {
-	cfg := &client.Config{
+	cfg := getGraylogConfig()
+
+	var ep, username, password string
+	if ServerEndpoint != "" {
+		ep = ServerEndpoint
+	} else if cfg != nil {
+		ep = cfg.Url
+	} else {
+		ep = "https://127.0.0.1"
+	}
+
+	if Username != "" {
+		username = Username
+	} else if cfg != nil {
+		username = cfg.UserToken
+	}
+
+	if Password != "" {
+		password = Password
+	} else {
+		password = "token"
+	}
+
+	clientCfg := &client.Config{
 		Verbose:  Verbose,
-		Endpoint: ServerEndpoint,
-		Username: Username,
-		Password: Password,
+		Endpoint: ep,
+		Username: username,
+		Password: password,
 	}
 
 	q := "*"
@@ -38,7 +70,7 @@ func search(cmd *cobra.Command, args []string) {
 		q = args[0]
 	}
 
-	qreq := graylog.NewQueryRequest(cfg, "", q)
+	qreq := graylog.NewQueryRequest(clientCfg, "", q)
 
 	qreq.PageLimit = Limit
 	qreq.Offset = Offset
@@ -71,7 +103,7 @@ func search(cmd *cobra.Command, args []string) {
 		msgCnt = 0
 		total = 0
 
-		res, err := graylog.Search(cfg, qreq)
+		res, err := graylog.Search(clientCfg, qreq)
 		if err != nil {
 			log.Printf("failed to search Graylog: err=%v", err)
 			return

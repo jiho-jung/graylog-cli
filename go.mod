@@ -3,6 +3,7 @@ module github.com/jeehoon/graylog-cli
 go 1.22
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/google/uuid v1.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.8.1

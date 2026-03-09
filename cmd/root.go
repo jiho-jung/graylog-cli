@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/jeehoon/graylog-cli/pkg/graylog/client"
 	"github.com/spf13/cobra"
 )
@@ -10,6 +14,9 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "graylog-cli",
 	Short: "A brief description of your application",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		initConfig()
+	},
 }
 
 func Execute() {
@@ -23,9 +30,11 @@ var (
 	SearchFrom     = ""
 	SearchTo       = ""
 	SearchRange    = "8h"
-	ServerEndpoint = "https://127.0.0.1"
+	ServerEndpoint = ""
 	Username       = ""
 	Password       = ""
+	ConfigFile     = "~/.config/graylog.toml"
+	Tier           = "dev2" // tier or regions
 	Offset         = 0
 	Limit          = 100
 	Sort           = "timestamp:DESC"
@@ -75,6 +84,17 @@ var (
 	}
 )
 
+type GraylogCliConfig struct {
+	GraylogEndpoint map[string]*GraylogLogin // key: tier(or region), dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us
+}
+
+type GraylogLogin struct {
+	Url       string `toml:"url"`
+	UserToken string `toml:"user-token"`
+}
+
+var graylogCliConfig GraylogCliConfig
+
 func init() {
 	rootCmd.PersistentFlags().SortFlags = false
 
@@ -87,4 +107,27 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&ServerEndpoint, "server", ServerEndpoint, "")
 	rootCmd.PersistentFlags().StringVar(&Username, "username", Username, "")
 	rootCmd.PersistentFlags().StringVar(&Password, "password", Password, "")
+
+	rootCmd.PersistentFlags().StringVar(&ConfigFile, "config", ConfigFile, "config file")
+	rootCmd.PersistentFlags().StringVar(&Tier, "tier", Tier, "Tier or region: dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us")
+}
+
+func initConfig() {
+	if strings.HasPrefix(ConfigFile, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil && home != "" {
+			ConfigFile = filepath.Join(home, ConfigFile[2:])
+		}
+	}
+
+	if _, err := os.Stat(ConfigFile); os.IsNotExist(err) {
+		// file does not exist
+	} else if err != nil {
+		// error ?
+	} else {
+		if _, err := toml.DecodeFile(ConfigFile, &graylogCliConfig); err != nil {
+			log.Println(err)
+			return
+		}
+	}
 }
