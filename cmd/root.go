@@ -13,7 +13,7 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "graylog-cli",
-	Short: "A brief description of your application",
+	Short: "graylog cli to browse logs instead of webui",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		initConfig()
 	},
@@ -84,6 +84,8 @@ var (
 	}
 )
 
+var graylogCliConfig GraylogCliConfig
+
 type GraylogCliConfig struct {
 	GraylogEndpoint map[string]*GraylogLogin // key: tier(or region), dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us
 }
@@ -93,23 +95,30 @@ type GraylogLogin struct {
 	UserToken string `toml:"user-token"`
 }
 
-var graylogCliConfig GraylogCliConfig
+func getGraylogConfig() *GraylogLogin {
+	cfg, ok := graylogCliConfig.GraylogEndpoint[Tier]
+	if !ok {
+		return &GraylogLogin{}
+	}
+
+	return cfg
+}
 
 func init() {
 	rootCmd.PersistentFlags().SortFlags = false
 
-	rootCmd.PersistentFlags().BoolVarP(&Verbose, "verbose", "v", Verbose, "")
+	rootCmd.PersistentFlags().BoolVarP(&Verbose, "verbose", "v", Verbose, "verbose to see more logs")
 
-	rootCmd.PersistentFlags().StringVar(&SearchFrom, "from", SearchFrom, "")
-	rootCmd.PersistentFlags().StringVar(&SearchTo, "to", SearchTo, "")
-	rootCmd.PersistentFlags().StringVar(&SearchRange, "range", SearchRange, "example. 1M 1w 1d 8h 30m 30s")
+	rootCmd.PersistentFlags().StringVar(&SearchFrom, "from", SearchFrom, "absolute time from in UTC")
+	rootCmd.PersistentFlags().StringVar(&SearchTo, "to", SearchTo, "abolute time to in UTC")
+	rootCmd.PersistentFlags().StringVar(&SearchRange, "range", SearchRange, "relative time. example. 1M 1w 1d 8h 30m 30s")
 
-	rootCmd.PersistentFlags().StringVar(&ServerEndpoint, "server", ServerEndpoint, "")
+	rootCmd.PersistentFlags().StringVar(&ServerEndpoint, "server", ServerEndpoint, "graylog endpoint url")
 	rootCmd.PersistentFlags().StringVar(&Username, "username", Username, "")
 	rootCmd.PersistentFlags().StringVar(&Password, "password", Password, "")
 
-	rootCmd.PersistentFlags().StringVar(&ConfigFile, "config", ConfigFile, "config file")
-	rootCmd.PersistentFlags().StringVar(&Tier, "tier", Tier, "Tier or region: dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us")
+	rootCmd.PersistentFlags().StringVar(&ConfigFile, "config", ConfigFile, "config file for the endpoint and username/passowrd")
+	rootCmd.PersistentFlags().StringVar(&Tier, "tier", Tier, "tier or region: dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us")
 }
 
 func initConfig() {

@@ -21,17 +21,8 @@ var (
 // searchCmd represents the search command
 var searchCmd = &cobra.Command{
 	Use:   "search",
-	Short: "A brief description of your command",
+	Short: "searching logs with query",
 	Run:   search,
-}
-
-func getGraylogConfig() *GraylogLogin {
-	cfg, ok := graylogCliConfig.GraylogEndpoint[Tier]
-	if !ok {
-		return &GraylogLogin{}
-	}
-
-	return cfg
 }
 
 func search(cmd *cobra.Command, args []string) {
