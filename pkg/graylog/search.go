@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jeehoon/graylog-cli/pkg/graylog/client"
+	"github.com/jeehoon/graylog-cli/pkg/timeutil"
 	"github.com/jeehoon/graylog-cli/pkg/util"
 )
 
@@ -146,8 +147,8 @@ func Search(cfg *client.Config, qreq *QueryRequest) (*client.Result, error) {
 			dur = qreq.SearchTimeRange.RelativeRange
 		}
 
-		//duration1, err1 := timeutil.ParseDuration(dur)
-		duration, err := time.ParseDuration(dur)
+		duration, err := timeutil.ParseDuration(dur)
+		//duration, err := time.ParseDuration(dur)
 		if err != nil {
 			e = fmt.Errorf("ERROR: %w", err)
 			return nil, e
