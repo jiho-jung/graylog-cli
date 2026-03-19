@@ -21,7 +21,7 @@ var (
 // searchCmd represents the search command
 var searchCmd = &cobra.Command{
 	Use:   "search",
-	Short: "searching logs with query",
+	Short: "searching logs with query (default subcmd)",
 	Run:   search,
 }
 
@@ -56,12 +56,14 @@ func search(cmd *cobra.Command, args []string) {
 		Password: password,
 	}
 
-	q := "*"
-	if len(args) != 0 {
-		q = args[0]
-	}
+	/*
+		q := "*"
+		if len(args) != 0 {
+			q = args[0]
+		}
+	*/
 
-	qreq := graylog.NewQueryRequest(clientCfg, "", q)
+	qreq := graylog.NewQueryRequest(clientCfg, "", Query)
 
 	qreq.PageLimit = Limit
 	qreq.Offset = Offset
@@ -178,6 +180,7 @@ func init() {
 	searchCmd.Flags().IntVar(&Offset, "offset", Offset, "")
 	searchCmd.Flags().IntVar(&Limit, "limit", Limit, "")
 	searchCmd.Flags().StringVar(&Sort, "sort", Sort, "")
+	searchCmd.Flags().StringVarP(&Query, "query", "q", Query, "query string")
 	searchCmd.Flags().BoolVarP(&Pagination, "page", "p", Pagination, "Pagination")
 
 	// Search

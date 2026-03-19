@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -19,14 +21,57 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+func flagsContain(flags []string, contains ...string) bool {
+	for _, flag := range contains {
+		if slices.Contains(flags, flag) {
+			return true
+		}
+	}
+	return false
+}
+
+func setDefaultCommandIfNonePresent(defaultCommand string) {
+	// Taken from cobra source code in command.go::ExecuteC()
+	var cmd *cobra.Command
+	var err error
+	var flags []string
+	if rootCmd.TraverseChildren {
+		cmd, flags, err = rootCmd.Traverse(os.Args[1:])
+	} else {
+		cmd, flags, err = rootCmd.Find(os.Args[1:])
+	}
+
+	// If no command was on the CLI, then cmd will return with
+	// the value of rootCmd.Use (which would run the help output
+	// in the full Execute() command)
+	if err != nil || cmd.Use == rootCmd.Use {
+		if !flagsContain(flags, "-v", "-h", "--version", "--help") {
+			rootCmd.SetArgs(append(os.Args[1:], defaultCommand))
+		}
+	}
+}
+
+// let main package set default command ...
+func ExecuteWithDefaultCommand(defaultCommand string) {
+	if defaultCommand != "" {
+		setDefaultCommandIfNonePresent(defaultCommand)
+	}
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
 func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
+	setDefaultCommandIfNonePresent("search")
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
 var (
+	Query          = "*"
 	SearchFrom     = ""
 	SearchTo       = ""
 	SearchRange    = "8h"
@@ -118,7 +163,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&Password, "password", Password, "")
 
 	rootCmd.PersistentFlags().StringVar(&ConfigFile, "config", ConfigFile, "config file for the endpoint and username/passowrd")
-	rootCmd.PersistentFlags().StringVar(&Tier, "tier", Tier, "tier or region: dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us")
+	rootCmd.PersistentFlags().StringVarP(&Tier, "tier", "t", Tier, "tier or region: dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us")
 }
 
 func initConfig() {
