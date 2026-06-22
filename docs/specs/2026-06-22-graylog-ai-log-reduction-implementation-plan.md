@@ -15,7 +15,7 @@
 
 ## Global Constraints
 
-- 기준 문서: `docs/2026-06-22-graylog-ai-log-reduction-design.md`
+- 기준 문서: `docs/specs/2026-06-22-graylog-ai-log-reduction-design.md`
 - AI 입력에는 원본 IP, UUID, VPC/ENI/ARN/account-like 값을 넣지 않고 일관 가명화한다.
 - 기본 분석 시간창은 장애 시각 기준 `-30m`부터 `+30m`까지다.
 - 절대 `--from/--to`, 장애 시각 기반 창, 상대 `--range` 입력을 모두 지원한다.
