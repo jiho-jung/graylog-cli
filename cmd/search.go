@@ -134,7 +134,8 @@ func newSearchRequest(args []string) (*graylog.QueryRequest, *client.Config, err
 	if len(args) != 0 {
 		query = strings.Join(args, " ")
 	}
-	query = buildSearchQuery(query, SearchApplication, SearchPart)
+	baseQuery := query
+	query = buildSearchQuery(baseQuery, SearchApplication, SearchPart)
 
 	if err := validateOutput(Output); err != nil {
 		return nil, nil, err
@@ -144,6 +145,9 @@ func newSearchRequest(args []string) (*graylog.QueryRequest, *client.Config, err
 	}
 
 	qreq := graylog.NewQueryRequest(clientCfg, "", query)
+	qreq.BaseQuery = baseQuery
+	qreq.Application = SearchApplication
+	qreq.Part = SearchPart
 
 	qreq.PageLimit = Limit
 	qreq.Offset = Offset

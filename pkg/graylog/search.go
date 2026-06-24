@@ -93,6 +93,9 @@ type QueryRequest struct {
 	Refresh         string
 	TUI             bool
 	Verbose         bool
+	BaseQuery       string
+	Application     string
+	Part            string
 	UserQuery       string
 }
 
@@ -127,7 +130,10 @@ func NewQueryRequest(cfg *client.Config, queryId string, userQuery string) *Quer
 
 	qreq.MessageId = uuid.New().String()
 	if len(userQuery) != 0 {
+		qreq.BaseQuery = userQuery
 		qreq.UserQuery = userQuery
+	} else {
+		qreq.BaseQuery = qreq.UserQuery
 	}
 
 	return qreq

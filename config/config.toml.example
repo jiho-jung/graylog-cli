@@ -1,0 +1,186 @@
+
+### config for graylog-cli
+### ~/.config/graylog.toml
+
+[GraylogEndpoint]
+	[GraylogEndpoint.dev2]
+		url ="https://mylog-dev.eu-central-1.graylog.com"
+		user-token = "my_graylog_token"
+
+	[GraylogEndpoint.stg2]
+		url="https://mylog-stg.eu-central-1.graylog.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.ppd2]
+		url="https://mylog-ppd.eu-central-1.graylog.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-eu]
+		url="https://mylog.eu-central-1.graylog.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-kr]
+		url="https://mylog.ap-northeast-1.graylog.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-sg]
+		url="https://mylog.ap-southeast-1.graylog.com"
+		user-token="my_graylog_token"
+
+	[GraylogEndpoint.spc-us]
+		url="https://mylog.us-east-1.graylog.com"
+		user-token="my_graylog_token"
+
+# Search TUI 설정입니다.
+# graylog-cli search --tui 실행 시 로그 목록, 상세 팝업, 로컬 필터,
+# Header/Footer 표시, 페이지 캐시 동작을 제어합니다.
+[SearchTUI]
+	# Space 키로 선택 로그를 펼쳤을 때 보여줄 최대 줄 수입니다.
+	# 실제 데이터가 더 짧으면 필요한 줄 수만 사용합니다.
+	expanded-max-lines = 20
+
+	# Enter 키로 여는 상세 팝업의 최대 줄 수입니다.
+	# 내용이 더 많으면 팝업 안에서 up/down, PgUp/PgDn으로 스크롤합니다.
+	detail-popup-max-lines = 20
+
+	# 로그 목록 첫 번째 컬럼인 일련번호(#)의 폭입니다.
+	row-number-width = 4
+
+	# 일련번호 계산 방식입니다.
+	# "absolute": Graylog 검색 offset 기준의 전체 번호(offset + row + 1)
+	# "page": 현재 페이지 안에서의 번호(row + 1)
+	row-number-mode = "absolute"
+
+	# TUI 세션 안에서 보관할 최근 페이지 캐시 개수입니다.
+	# 페이지를 많이 오가면 값을 키우고, 메모리를 줄이고 싶으면 낮춥니다.
+	max-cached-pages = 8
+
+	# true이면 페이지 이동 후 다시 돌아와도 Space로 펼친 로그 상태를 유지합니다.
+	# 캐시에서 제거된 페이지의 펼침 상태는 함께 사라질 수 있습니다.
+	persist-expanded-rows = true
+
+	# follow 모드에서 첫 페이지가 아닐 때 자동 refresh를 멈출지 여부입니다.
+	# true이면 과거 페이지를 보고 있을 때 화면이 자동으로 바뀌지 않습니다.
+	follow-refresh-pauses-on-nonfirst-page = true
+
+	# 펼침 영역에서 message 값을 화면 폭에 맞게 줄바꿈할지 여부입니다.
+	# false이면 원문 줄 단위로 표시하고 긴 줄은 잘립니다.
+	message-wrap = true
+
+	# 1줄 로그 셀 내용이 컬럼 폭보다 길 때 처리 방식입니다.
+	# v2에서는 "clip"만 지원하며, 긴 값은 오른쪽이 잘립니다.
+	cell-overflow = "clip"
+
+	# 컬럼 폭 조정 모드에서 허용하는 최소 컬럼 폭입니다.
+	min-column-width = 4
+
+	# 컬럼 폭 조정 모드에서 +/- 한 번에 변경할 폭입니다.
+	column-resize-step = 2
+
+	# true이면 선택된 로그 행 앞에 커서 표시(예: ▶)를 보여줍니다.
+	show-row-cursor = true
+
+	# 상세 팝업 폭입니다. 터미널 전체 폭 대비 비율로 계산합니다.
+	# 0.85는 터미널 폭의 85%를 사용한다는 뜻입니다.
+	detail-popup-width-ratio = 0.85
+
+	# 상세 팝업 위치입니다.
+	# 지원값: "center", "right", "bottom"
+	detail-popup-position = "center"
+
+	# true이면 상세 팝업에서 빈 값 필드도 표시합니다.
+	detail-show-empty-fields = false
+
+	# 상세 팝업에서 먼저 보여줄 필드 순서입니다.
+	# 여기에 없는 필드는 뒤쪽에 key 이름 기준 정렬로 이어서 표시합니다.
+	detail-fields = ["timestamp", "level", "source", "message", "application", "part"]
+
+	# 로컬 필터에서 후보 필드로 보여줄 필드 목록입니다.
+	# message는 전체 원문 대신 message pattern 후보를 생성합니다.
+	filter-candidate-fields = ["level", "source", "application", "part", "message"]
+
+	# 일반 필드별 후보 값 최대 개수입니다.
+	filter-candidate-limit = 20
+
+	# message 필드에서 보여줄 pattern 후보 최대 개수입니다.
+	message-pattern-candidate-limit = 20
+
+	# 로컬 필터 매칭 방식입니다.
+	# v2에서는 "contains"만 지원합니다.
+	filter-match-mode = "contains"
+
+	# true이면 로컬 필터가 대소문자를 구분합니다.
+	filter-case-sensitive = false
+
+	# Header/Footer 표시 여부입니다.
+	header-visible = true
+	footer-visible = true
+
+	# Header/Footer의 고정폭 box 사이 공백 크기입니다.
+	header-box-gap = 1
+	footer-box-gap = 1
+
+	# Header/Footer box 값이 폭보다 길 때 처리 방식입니다.
+	# v2에서는 "clip"만 지원합니다.
+	box-overflow = "clip"
+
+	# 로그 목록 데이터 컬럼 순서와 폭입니다.
+	# 첫 번째 일련번호(#) 컬럼은 자동으로 추가되므로 여기에 넣지 않습니다.
+	# field는 Graylog message field 이름 또는 decoder가 지원하는 가상 필드
+	# timestamp, level, source, message를 사용할 수 있습니다.
+	[[SearchTUI.columns]]
+		field = "timestamp"
+		width = 20
+
+	[[SearchTUI.columns]]
+		field = "level"
+		width = 8
+
+	[[SearchTUI.columns]]
+		field = "source"
+		width = 18
+
+	[[SearchTUI.columns]]
+		field = "message"
+		width = 60
+
+	# Header에 표시할 고정폭 box 목록입니다.
+	# name은 표시할 데이터 종류이고, width는 고정 폭입니다.
+	# 값이 길면 width 안에서 잘립니다.
+	[[SearchTUI.header-boxes]]
+		name = "view"
+		width = 16
+
+	[[SearchTUI.header-boxes]]
+		name = "range"
+		width = 28
+
+	[[SearchTUI.header-boxes]]
+		name = "query"
+		width = 40
+
+	[[SearchTUI.header-boxes]]
+		name = "page"
+		width = 14
+
+	[[SearchTUI.header-boxes]]
+		name = "sort"
+		width = 24
+
+	# Footer에 표시할 고정폭 box 목록입니다.
+	# Status/Help footer에서 주요 상태 값의 위치가 흔들리지 않도록 합니다.
+	[[SearchTUI.footer-boxes]]
+		name = "status"
+		width = 18
+
+	[[SearchTUI.footer-boxes]]
+		name = "row"
+		width = 14
+
+	[[SearchTUI.footer-boxes]]
+		name = "cached-pages"
+		width = 16
+
+	[[SearchTUI.footer-boxes]]
+		name = "refreshed"
+		width = 18
