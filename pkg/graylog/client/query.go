@@ -1,6 +1,9 @@
 package client
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type SearchQuery struct {
 	Id          string       `json:"id"`
@@ -40,10 +43,21 @@ func (query *SearchQuery) SetTimerangeAbsolute(from, to string) {
 	}
 }
 
-func (query *SearchQuery) AppendSearchMessage(id string, limit, offset int, sort string) {
+func (query *SearchQuery) AppendSearchMessage(id string, limit, offset int, sort string) error {
+	return query.AppendSearchMessageWithFields(id, limit, offset, sort, nil)
+}
+
+func (query *SearchQuery) AppendSearchMessageWithFields(id string, limit, offset int, sort string, fields []string) error {
 	strs := strings.SplitN(sort, ":", 2)
+	if len(strs) != 2 || strs[0] == "" || strs[1] == "" {
+		return fmt.Errorf("invalid sort %q: expected field:ASC or field:DESC", sort)
+	}
+
 	field := strs[0]
-	order := strs[1]
+	order := strings.ToUpper(strs[1])
+	if order != "ASC" && order != "DESC" {
+		return fmt.Errorf("invalid sort order %q: expected ASC or DESC", strs[1])
+	}
 
 	query.SearchTypes = append(query.SearchTypes, &SearchTypeMessage{
 		Id:     id,
@@ -57,6 +71,8 @@ func (query *SearchQuery) AppendSearchMessage(id string, limit, offset int, sort
 			},
 		},
 	})
+
+	return nil
 }
 
 func (query *SearchQuery) AppendSearchTop(id string, field string, limit int) {

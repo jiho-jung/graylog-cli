@@ -1,6 +1,7 @@
 package graylog
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/jeehoon/graylog-cli/pkg/graylog/client"
@@ -28,10 +29,27 @@ func PrintSummary(res *client.Result) {
 }
 
 func PrintMessage(qreq *QueryRequest, res *client.Result, decoderCfg *client.DecoderConfig) (uint64, uint64) {
+	lines, msgCnt, total, err := RenderMessageLines(qreq, res, decoderCfg)
+	if err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		return 0, 0
+	}
+
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+	if qreq.Output != client.OutputJSON && qreq.Output != client.OutputNDJSON {
+		PrintMessageSummary(qreq, res, msgCnt)
+	}
+
+	return msgCnt, total
+}
+
+func RenderMessageLines(qreq *QueryRequest, res *client.Result, decoderCfg *client.DecoderConfig) ([]string, uint64, uint64, error) {
 	msgId := qreq.MessageId
 	searchRes, has := res.SearchTypes[msgId]
 	if !has {
-		return 0, 0
+		return nil, 0, 0, nil
 	}
 
 	if decoderCfg == nil {
@@ -39,23 +57,49 @@ func PrintMessage(qreq *QueryRequest, res *client.Result, decoderCfg *client.Dec
 	}
 
 	decoder := client.NewDecoder(decoderCfg)
-	useColor := util.UseColor()
+	useColor := util.UseColor() && qreq.Output != client.OutputJSON && qreq.Output != client.OutputNDJSON
 	msgCnt := uint64(len(searchRes.Messages))
 	total := searchRes.TotalResults
-	page := qreq.Offset/qreq.PageLimit + 1
-	pastCnt := uint64(qreq.Offset) + msgCnt
 
+	if qreq.Output == client.OutputJSON {
+		messages := make([]map[string]any, 0, len(searchRes.Messages))
+		for idx := len(searchRes.Messages) - 1; idx >= 0; idx-- {
+			messages = append(messages, searchRes.Messages[idx].Message)
+		}
+		b, err := json.MarshalIndent(messages, "", "  ")
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return []string{string(b)}, msgCnt, total, nil
+	}
+
+	lines := []string{}
 	for idx := len(searchRes.Messages) - 1; idx >= 0; idx-- {
 		msg := searchRes.Messages[idx]
-		fmt.Println(client.Render(decoder, useColor, msg.Message))
+		line, err := client.RenderMessage(decoder, useColor, msg, qreq.Output)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		lines = append(lines, line)
 	}
+
+	return lines, msgCnt, total, nil
+}
+
+func PrintMessageSummary(qreq *QueryRequest, res *client.Result, msgCnt uint64) {
+	msgId := qreq.MessageId
+	searchRes, has := res.SearchTypes[msgId]
+	if !has {
+		return
+	}
+
+	page := qreq.Offset/qreq.PageLimit + 1
+	pastCnt := uint64(qreq.Offset) + msgCnt
 
 	fmt.Printf("========== Messages ==========\n")
 	out("Range", " %v ~ %v\n", searchRes.EffectiveTimerange.From, searchRes.EffectiveTimerange.To)
 	out("Messages", " %v/%v\n", pastCnt, searchRes.TotalResults)
 	out("Page", " %d(%d)/%d\n", page, qreq.PageLimit, searchRes.TotalResults/uint64(qreq.PageLimit))
-
-	return msgCnt, total
 }
 
 func PrintTop(res *client.Result, msgId string, topFldName string, tick string) {

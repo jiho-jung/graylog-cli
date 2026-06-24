@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jeehoon/graylog-cli/pkg/graylog"
+	"github.com/jeehoon/graylog-cli/pkg/graylog/client"
 	"github.com/jeehoon/graylog-cli/pkg/timeutil"
 )
 
@@ -29,8 +29,9 @@ const (
 	DarkGray = "\033[90m"
 )
 
-func Render(dec *graylog.Decoder, useColor bool, msg *graylog.Message) string {
-	keys, values := dec.Fields(msg)
+func Render(dec *client.Decoder, useColor bool, msg *client.Message) string {
+	fieldsMap := msg.Message
+	keys, values := dec.Fields(fieldsMap)
 	var fields []string
 	for idx, key := range keys {
 		value := values[idx]
@@ -43,31 +44,31 @@ func Render(dec *graylog.Decoder, useColor bool, msg *graylog.Message) string {
 		fields = append(fields, fmt.Sprintf("%v:%v", key, value))
 	}
 
-	hostname := dec.Hostname(msg)
+	hostname := dec.Hostname(fieldsMap)
 
 	if useColor {
 		hostname = LightMagenta + hostname + Reset
 	}
 
-	lv := dec.Level(msg)
+	lv := dec.Level(fieldsMap)
 	level := lv.String()
 
 	if useColor {
 		switch lv {
-		case graylog.LevelEmergency, graylog.LevelAlert, graylog.LevelCritical, graylog.LevelError:
+		case client.LevelEmergency, client.LevelAlert, client.LevelCritical, client.LevelError:
 			level = Red + level + Reset
-		case graylog.LevelWarning:
+		case client.LevelWarning:
 			level = Yellow + level + Reset
-		case graylog.LevelNotice, graylog.LevelInformational:
+		case client.LevelNotice, client.LevelInformational:
 			level = White + level + Reset
-		case graylog.LevelDebug:
+		case client.LevelDebug:
 			level = DarkGray + level + Reset
 		}
 	}
 
-	timestamp := timeutil.Format(dec.Timestamp(msg))
+	timestamp := timeutil.Format(dec.Timestamp(fieldsMap))
 
-	text := dec.Text(msg)
+	text := dec.Text(fieldsMap)
 
 	output := fmt.Sprintln(hostname, timestamp, level, text, strings.Join(fields, " "))
 

@@ -74,12 +74,7 @@ func (client *Client) request(method string, path string, req, resp any) (err er
 	}
 
 	if httpResp.StatusCode > 299 {
-		b, err := io.ReadAll(httpResp.Body)
-		if err != nil {
-			return err
-		}
-
-		return errors.Errorf("%v / %v", httpResp.Status, string(b))
+		return errors.Errorf("%v / %v", httpResp.Status, strings.TrimSpace(string(respBody)))
 	}
 
 	buff := bytes.NewBuffer(respBody)

@@ -19,5 +19,5 @@ build:
 #endif
 
 run:
-	./graylog-cli search ${args} -p
+	./graylog-cli search ${args} --since 8h --page
 #	./graylog-cli search ${args}

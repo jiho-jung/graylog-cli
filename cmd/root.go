@@ -113,7 +113,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&SearchFrom, "from", SearchFrom, "absolute time from in UTC")
 	rootCmd.PersistentFlags().StringVar(&SearchTo, "to", SearchTo, "abolute time to in UTC")
-	rootCmd.PersistentFlags().StringVar(&SearchRange, "range", SearchRange, "relative time. example. 1M 1w 1d 8h 30m 30s")
+	rootCmd.PersistentFlags().StringVar(&SearchRange, "since", SearchRange, "relative time. example. 1M 1w 1d 8h 30m 30s")
 
 	rootCmd.PersistentFlags().StringVar(&ServerEndpoint, "server", ServerEndpoint, "graylog endpoint url")
 	rootCmd.PersistentFlags().StringVar(&Username, "username", Username, "")

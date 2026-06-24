@@ -87,6 +87,11 @@ type QueryRequest struct {
 	Offset          int
 	PageLimit       int
 	Sort            string
+	Fields          []string
+	Output          string
+	Follow          bool
+	Refresh         string
+	TUI             bool
 	Verbose         bool
 	UserQuery       string
 }
@@ -110,6 +115,7 @@ func NewQueryRequest(cfg *client.Config, queryId string, userQuery string) *Quer
 		SearchTimeRange: TimeRange{TimeType: TimeTypeRelative, RelativeRange: DefSearchRange1H},
 		PageLimit:       DefPageLimit,
 		Sort:            DefSortDesc,
+		Output:          client.OutputCompact,
 		Verbose:         false,
 	}
 
@@ -162,7 +168,10 @@ func Search(cfg *client.Config, qreq *QueryRequest) (*client.Result, error) {
 	case QueryTypeFieldTop:
 		query.AppendSearchTop(qreq.MessageId, qreq.TopFieldName, qreq.PageLimit)
 	default:
-		query.AppendSearchMessage(qreq.MessageId, qreq.PageLimit, qreq.Offset, qreq.Sort)
+		if err := query.AppendSearchMessageWithFields(qreq.MessageId, qreq.PageLimit, qreq.Offset, qreq.Sort, qreq.Fields); err != nil {
+			e = fmt.Errorf("ERROR: %w", err)
+			return nil, e
+		}
 	}
 
 	req.AddQuery(query)
