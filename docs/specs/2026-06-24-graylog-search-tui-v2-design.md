@@ -73,15 +73,14 @@ Header에는 현재 TUI 상태를 이해하는 데 필요한 상세 메타 정�
 - Offset/limit: logs view의 현재 offset과 page limit
 - Sort: 현재 서버 정렬 기준
 - Filters: `application`, `part`, 로컬 필터 적용 여부
-- Refresh: 마지막 조회 시각 또는 follow refresh 상태
 
 Histogram view에서도 Header는 같은 위치에 표시한다. 다만 page와 offset은 logs view의 현재 위치를 의미하며, Histogram view에서는 추가로 선택 bucket과 bucket 수를 표시한다. 상세 팝업이 열려도 Header는 logs view의 상태를 유지한다.
 
 Header는 편집 가능한 영역이 아니다. 검색 조건 변경은 단축키로 여는 프롬프트를 통해 수행한다.
 
-Header는 항목별 고정폭 output box로 렌더링한다. 예를 들어 `view`, `range`, `query`, `page`, `sort`, `filter`, `refresh`는 각각 독립 box를 가지며, box 순서와 폭은 config로 지정할 수 있다. 값이 길어도 box 폭은 변하지 않고 내부 값만 clipping한다. Footer도 같은 방식으로 `status`, `row`, `cached-pages`, `refreshed` 같은 항목을 고정폭 box로 표시한다.
+Header는 항목별 고정폭 output box로 렌더링한다. 예를 들어 `view`, `range`, `query`, `page`, `sort`, `filter`는 각각 독립 box를 가지며, box 순서와 폭은 config로 지정할 수 있다. 값이 길어도 box 폭은 변하지 않고 내부 값만 clipping한다. 마지막 refresh 시각은 Header가 아니라 Footer의 `refreshed` box에 표시한다. Footer도 같은 방식으로 `status`, `row`, `cached-pages`, `refreshed` 같은 항목을 고정폭 box로 표시한다.
 
-화면은 Header, Body, Footer를 각각 독립 `viewport.Model`로 보유하고 렌더링한다. 세 viewport는 서로 다른 테두리 box로 감싸 화면 영역을 명확히 분리한다. Header/Footer는 스크롤 대상이 아니며, Body만 로그 목록, 그룹, 히스토그램, 상세 팝업 배경의 주 표시 영역으로 사용한다. 프롬프트가 열리면 별도 네 번째 영역을 만들지 않고 Footer viewport의 첫 줄에 포함한다.
+화면은 Header, Body, Footer를 각각 독립 `viewport.Model`로 보유하고 렌더링한다. 세 viewport는 서로 다른 테두리 box로 감싸 화면 영역을 명확히 분리한다. Header/Body/Footer box는 빈 줄 없이 바로 인접하게 붙인다. Header/Footer는 스크롤 대상이 아니며, Body만 로그 목록, 그룹, 히스토그램, 상세 팝업 배경의 주 표시 영역으로 사용한다. 프롬프트가 열리면 별도 네 번째 영역을 만들지 않고 Footer viewport의 첫 줄에 포함한다.
 
 ## Body Table
 
@@ -370,6 +369,10 @@ width = 14
 [[SearchTUI.header-boxes]]
 name = "sort"
 width = 24
+
+[[SearchTUI.header-boxes]]
+name = "filter"
+width = 18
 
 [[SearchTUI.footer-boxes]]
 name = "status"

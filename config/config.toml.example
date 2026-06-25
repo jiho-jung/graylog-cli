@@ -169,6 +169,10 @@
 		name = "sort"
 		width = 24
 
+	[[SearchTUI.header-boxes]]
+		name = "filter"
+		width = 18
+
 	# Footer에 표시할 고정폭 box 목록입니다.
 	# Status/Help footer에서 주요 상태 값의 위치가 흔들리지 않도록 합니다.
 	[[SearchTUI.footer-boxes]]

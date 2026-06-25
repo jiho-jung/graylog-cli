@@ -219,7 +219,6 @@ func defaultSearchTUIConfig() SearchTUIConfig {
 			{Name: "page", Width: 14},
 			{Name: "sort", Width: 24},
 			{Name: "filter", Width: 18},
-			{Name: "refresh", Width: 18},
 		},
 		FooterBoxes: []SearchTUIOutputBox{
 			{Name: "status", Width: 18},
@@ -297,10 +296,25 @@ func normalizedSearchTUIConfig(cfg SearchTUIConfig) SearchTUIConfig {
 	if len(cfg.HeaderBoxes) == 0 {
 		cfg.HeaderBoxes = def.HeaderBoxes
 	}
+	cfg.HeaderBoxes = normalizedHeaderBoxes(cfg.HeaderBoxes, def.HeaderBoxes)
 	if len(cfg.FooterBoxes) == 0 {
 		cfg.FooterBoxes = def.FooterBoxes
 	}
 	return cfg
+}
+
+func normalizedHeaderBoxes(boxes []SearchTUIOutputBox, fallback []SearchTUIOutputBox) []SearchTUIOutputBox {
+	out := make([]SearchTUIOutputBox, 0, len(boxes))
+	for _, box := range boxes {
+		if box.Name == "refresh" {
+			continue
+		}
+		out = append(out, box)
+	}
+	if len(out) == 0 {
+		return fallback
+	}
+	return out
 }
 
 func (km tuiHelpKeyMap) ShortHelp() []key.Binding {
@@ -394,10 +408,12 @@ func (m *searchTUIModel) refreshComponents() {
 	m.headerViewport.Width = width
 	m.headerViewport.Height = m.headerContentHeight(m.view)
 	m.headerViewport.SetContent(strings.Join(m.headerLines(m.view), "\n"))
+	m.headerViewport.SetYOffset(0)
 
 	m.footerViewport.Width = width
 	m.footerViewport.Height = m.footerContentHeight()
 	m.footerViewport.SetContent(strings.Join(m.footerLines(), "\n"))
+	m.footerViewport.SetYOffset(0)
 
 	m.bodyViewport.Width = width
 	m.bodyViewport.Height = bodyHeight
@@ -1380,6 +1396,7 @@ func (m *searchTUIModel) renderScreen(view string, body string) string {
 	m.headerViewport.Width = m.viewportContentWidth()
 	m.headerViewport.Height = m.headerContentHeight(view)
 	m.headerViewport.SetContent(strings.Join(m.headerLines(view), "\n"))
+	m.headerViewport.SetYOffset(0)
 
 	m.bodyViewport.Width = m.viewportContentWidth()
 	m.bodyViewport.Height = m.bodyHeight()
@@ -1388,13 +1405,15 @@ func (m *searchTUIModel) renderScreen(view string, body string) string {
 	m.footerViewport.Width = m.viewportContentWidth()
 	m.footerViewport.Height = m.footerContentHeight()
 	m.footerViewport.SetContent(strings.Join(m.footerLines(), "\n"))
+	m.footerViewport.SetYOffset(0)
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		m.headerView(view),
-		m.bodyView(),
-		m.footerView(),
-	)
+	parts := []string{}
+	for _, part := range []string{m.headerView(view), m.bodyView(), m.footerView()} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func (m searchTUIModel) headerView(view string) string {
@@ -1507,7 +1526,7 @@ func (m searchTUIModel) promptLine() string {
 	if m.err != nil {
 		return fmt.Sprintf("error: %v", m.err)
 	}
-	if m.loading {
+	if m.loading && len(m.messages) == 0 {
 		return "loading..."
 	}
 	return ""

@@ -107,12 +107,14 @@ func TestSearchTUIRendersV2ComponentLayoutAndTable(t *testing.T) {
 		"app",
 		"source",
 		"message",
-		"refresh:",
 		"row 1/4",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
+	}
+	if strings.Contains(view, "refresh:") {
+		t.Fatalf("header should not render refresh box:\n%s", view)
 	}
 	if strings.Contains(view, "\nstack line") {
 		t.Fatalf("logs view rendered multiline detail content:\n%s", view)
@@ -158,6 +160,50 @@ func TestSearchTUIRendersSeparateBorderedViewports(t *testing.T) {
 	}
 	if model.footerViewport.Height == 0 {
 		t.Fatal("footer viewport height was not initialized")
+	}
+	if strings.Contains(view, "┘\n\n┌") {
+		t.Fatalf("view should not render blank lines between boxes:\n%s", view)
+	}
+	if !strings.Contains(view, "┘\n┌") {
+		t.Fatalf("view should render adjacent bordered boxes:\n%s", view)
+	}
+}
+
+func TestSearchTUIHeaderViewportResetsOffset(t *testing.T) {
+	model := testTUIModel()
+	model.headerViewport.SetYOffset(10)
+
+	view := model.View()
+	if !strings.Contains(view, "[view: logs") {
+		t.Fatalf("header should render from first line after offset reset:\n%s", view)
+	}
+}
+
+func TestSearchTUIHeaderRefreshOnlyConfigFallsBackToDefault(t *testing.T) {
+	oldConfig := graylogCliConfig
+	t.Cleanup(func() {
+		graylogCliConfig = oldConfig
+	})
+	graylogCliConfig.SearchTUI = defaultSearchTUIConfig()
+	graylogCliConfig.SearchTUI.HeaderBoxes = []SearchTUIOutputBox{{Name: "refresh", Width: 18}}
+
+	model := testTUIModel()
+	view := model.View()
+	if !strings.Contains(view, "[view: logs") {
+		t.Fatalf("header should fall back to default boxes when refresh is removed:\n%s", view)
+	}
+	if strings.Contains(view, "refresh:") {
+		t.Fatalf("header should ignore refresh box from config:\n%s", view)
+	}
+}
+
+func TestSearchTUILoadingWithExistingMessagesDoesNotShowPromptLine(t *testing.T) {
+	model := testTUIModel()
+	model.loading = true
+
+	view := model.View()
+	if strings.Contains(view, "\nloading...\n") {
+		t.Fatalf("loading prompt line should not render while existing rows remain:\n%s", view)
 	}
 }
 
