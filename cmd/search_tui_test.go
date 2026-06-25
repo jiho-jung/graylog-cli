@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -39,7 +41,7 @@ func applyTestCalc(model *searchTUIModel) {
 	model.applyCalcResult(tuiCalcResult{
 		generation: model.calcGeneration,
 		groups:     calculateGroups(model.visibleMessages(), model.decoderCfg),
-		candidates: calculateFieldCandidates(model.visibleMessages(), model.columns, model.decoderCfg),
+		candidates: calculateFieldCandidates(model.visibleMessages(), model.columns, model.decoderCfg, model.tuiCfg),
 	})
 }
 
@@ -97,25 +99,27 @@ func TestSearchTUIRendersV2ComponentLayoutAndTable(t *testing.T) {
 
 	view := model.View()
 	for _, want := range []string{
-		"graylog-cli search --tui | view: logs",
-		"range: 2026-06-24T14:00:00.000Z ~ 2026-06-24T14:15:00.000Z",
+		"[view: logs",
+		"[range: 2026-06-24T14:00:00.0",
+		"#",
 		"timestamp",
 		"level",
+		"app",
 		"source",
 		"message",
 		"refresh:",
-		"STATUS page 1",
+		"row 1/4",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
 	}
-	if strings.Contains(view, "stack line") {
+	if strings.Contains(view, "\nstack line") {
 		t.Fatalf("logs view rendered multiline detail content:\n%s", view)
 	}
 }
 
-func TestSearchTUIUsesBubblesTableForLogRows(t *testing.T) {
+func TestSearchTUIUsesConfiguredColumnsForLogRows(t *testing.T) {
 	model := testTUIModel()
 	model.selected = 1
 	model.refreshComponents()
@@ -127,18 +131,176 @@ func TestSearchTUIUsesBubblesTableForLogRows(t *testing.T) {
 		t.Fatalf("table cursor = %d, want 1", model.logsTable.Cursor())
 	}
 	cols := model.logsTable.Columns()
-	if len(cols) == 0 || cols[0].Title != "timestamp" {
-		t.Fatalf("table columns = %#v, want timestamp first", cols)
+	if len(cols) == 0 || cols[0].Title != "#" {
+		t.Fatalf("table columns = %#v, want row number first", cols)
 	}
 	view := model.View()
-	for _, forbidden := range []string{"┌", "┐", "└", "┘", "├", "┤"} {
-		if strings.Contains(view, forbidden) {
-			t.Fatalf("view still uses manual frame character %q:\n%s", forbidden, view)
+	if strings.Contains(view, "▶2") {
+		t.Fatalf("selected row should not show row number cursor:\n%s", view)
+	}
+	if !strings.Contains(view, "2    2026") {
+		t.Fatalf("selected row should keep row number without cursor:\n%s", view)
+	}
+}
+
+func TestSearchTUIRendersSeparateBorderedViewports(t *testing.T) {
+	model := testTUIModel()
+	view := model.View()
+
+	if got := strings.Count(view, "┌"); got < 3 {
+		t.Fatalf("view should render header/body/footer boxes, got %d top borders:\n%s", got, view)
+	}
+	if model.headerViewport.Height == 0 {
+		t.Fatal("header viewport height was not initialized")
+	}
+	if model.bodyViewport.Height == 0 {
+		t.Fatal("body viewport height was not initialized")
+	}
+	if model.footerViewport.Height == 0 {
+		t.Fatal("footer viewport height was not initialized")
+	}
+}
+
+func TestSearchTUIDefaultColumnsAndClipping(t *testing.T) {
+	model := testTUIModel()
+	widths := model.columnWidths()
+	if len(model.columns) < 5 {
+		t.Fatalf("columns = %#v, want timestamp/level/application/source/message", model.columns)
+	}
+	for idx, want := range []string{"timestamp", "level", "application", "source"} {
+		if model.columns[idx] != want {
+			t.Fatalf("column[%d] = %q, want %q", idx, model.columns[idx], want)
+		}
+	}
+	if model.columns[len(model.columns)-1] != "message" {
+		t.Fatalf("last column = %q, want message", model.columns[len(model.columns)-1])
+	}
+	if widths[0] < len("2026-06-25T00:09:35.855Z") {
+		t.Fatalf("timestamp width = %d, want full ISO timestamp width", widths[0])
+	}
+	if got := displayColumnName("application"); got != "app" {
+		t.Fatalf("application display = %q, want app", got)
+	}
+	if got := leftClip("2026-06-25T00:09:35.855Z", 10); got != "09:35.855Z" {
+		t.Fatalf("leftClip timestamp = %q", got)
+	}
+	if got := leftClip("very-long-source-name", 6); got != "e-name" {
+		t.Fatalf("leftClip source = %q", got)
+	}
+	if widths[len(widths)-1] <= 0 {
+		t.Fatalf("message width = %d, want flex fill", widths[len(widths)-1])
+	}
+}
+
+func TestSearchTUILogRowsFitViewportWidth(t *testing.T) {
+	model := testTUIModel()
+	model.width = 60
+	model.messages = []*client.Message{{Message: map[string]any{
+		"timestamp":   "2026-06-25T00:09:35.855Z",
+		"level":       "INFO",
+		"application": "api",
+		"source":      "very-long-source-name-that-should-left-clip",
+		"message":     strings.Repeat("long-message ", 20),
+	}}}
+	model.cachedPages[0] = model.messages
+
+	for _, line := range strings.Split(model.renderLogBody(), "\n") {
+		if visibleLen(line) > model.viewportContentWidth() {
+			t.Fatalf("line width = %d, want <= %d:\n%q", visibleLen(line), model.viewportContentWidth(), line)
 		}
 	}
 }
 
-func TestSearchTUIEnterOpensSeparateDetailView(t *testing.T) {
+func TestSearchTUICursorMovesWithinVisibleWindow(t *testing.T) {
+	model := testTUIModel()
+	model.messages = testTUIResult(0, 12, 12).messages
+	model.cachedPages[0] = model.messages
+	model.height = 10
+	model.listScroll = 0
+	model.selected = 0
+
+	updated, _ := model.handleLogsKeyMsg(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(searchTUIModel)
+	if model.selected != 1 {
+		t.Fatalf("selected = %d, want one-row movement", model.selected)
+	}
+	if model.visibleStartIndex() != 0 {
+		t.Fatalf("visible start = %d, want cursor to move before scrolling", model.visibleStartIndex())
+	}
+}
+
+func TestSearchTUIPageKeysUseConfiguredScrollStep(t *testing.T) {
+	model := testTUIModel()
+	model.messages = testTUIResult(0, 30, 30).messages
+	model.cachedPages[0] = model.messages
+	model.tuiCfg.PageScrollStep = 10
+
+	updated, _ := model.handleLogsKeyMsg(tea.KeyMsg{Type: tea.KeyPgDown})
+	model = updated.(searchTUIModel)
+	if model.selected != 10 {
+		t.Fatalf("selected = %d, want 10", model.selected)
+	}
+
+	updated, _ = model.handleLogsKeyMsg(tea.KeyMsg{Type: tea.KeyPgUp})
+	model = updated.(searchTUIModel)
+	if model.selected != 0 {
+		t.Fatalf("selected = %d, want 0", model.selected)
+	}
+}
+
+func TestSearchTUIScrollsByConfiguredStepAtBodyBottom(t *testing.T) {
+	model := testTUIModel()
+	model.tuiCfg.HeaderVisible = false
+	model.tuiCfg.FooterVisible = false
+	model.tuiCfg.PageScrollStep = 10
+	model.height = 12
+	model.messages = testTUIResult(0, 30, 30).messages
+	model.cachedPages[0] = model.messages
+	model.selected = 0
+	model.listScroll = 0
+
+	for range 11 {
+		updated, _ := model.handleLogsKeyMsg(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(searchTUIModel)
+	}
+	if model.selected != 11 {
+		t.Fatalf("selected = %d, want 11", model.selected)
+	}
+	if model.listScroll != 10 {
+		t.Fatalf("listScroll = %d, want configured 10-line scroll", model.listScroll)
+	}
+}
+
+func TestSearchTUIExpandedRowsKeepSelectedLineVisible(t *testing.T) {
+	model := testTUIModel()
+	model.tuiCfg.HeaderVisible = false
+	model.tuiCfg.FooterVisible = false
+	model.tuiCfg.ExpandedMaxLines = 10
+	model.tuiCfg.PageScrollStep = 10
+	model.height = 12
+	model.messages = testTUIResult(0, 30, 30).messages
+	model.cachedPages[0] = model.messages
+	model.selected = 0
+	model.listScroll = 0
+
+	updated, _ := model.handleLogsKey(" ")
+	model = updated.(searchTUIModel)
+	updated, _ = model.handleLogsKeyMsg(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(searchTUIModel)
+
+	if model.selected != 1 {
+		t.Fatalf("selected = %d, want 1", model.selected)
+	}
+	selectedLine := model.selectedLineIndex()
+	if selectedLine < model.listScroll || selectedLine >= model.listScroll+model.visibleLogBodyRows() {
+		t.Fatalf("selected line %d outside visible range [%d,%d)", selectedLine, model.listScroll, model.listScroll+model.visibleLogBodyRows())
+	}
+	if !strings.Contains(model.renderLogBody(), "2    2026") {
+		t.Fatalf("selected row is not visible after expanded row scroll:\n%s", model.renderLogBody())
+	}
+}
+
+func TestSearchTUIEnterOpensDetailPopup(t *testing.T) {
 	model := testTUIModel()
 
 	updated, cmd := model.handleLogsKey("enter")
@@ -146,29 +308,174 @@ func TestSearchTUIEnterOpensSeparateDetailView(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("enter returned command, want nil")
 	}
-	if model.view != tuiViewDetail {
-		t.Fatalf("view = %q, want detail", model.view)
+	if !model.detailPopupOpen {
+		t.Fatal("detail popup did not open")
 	}
 	view := model.View()
-	if !strings.Contains(view, "view: detail | tab: JSON Tree") {
-		t.Fatalf("detail header missing JSON Tree tab:\n%s", view)
+	for _, want := range []string{"detail", "timestamp:", "request_id:", "Esc close"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("detail popup missing %q:\n%s", want, view)
+		}
 	}
-	if !strings.Contains(view, "nested:") || !strings.Contains(view, "duration_ms: 0") {
-		t.Fatalf("detail JSON tree missing nested fields:\n%s", view)
+	if !strings.Contains(view, "┏") || !strings.Contains(view, "┃") {
+		t.Fatalf("detail popup should use thick border:\n%s", view)
+	}
+	if strings.Contains(view, "\x1b[7m") {
+		t.Fatalf("detail popup should not overlap inverse selected row styling:\n%s", view)
+	}
+	updated, _ = model.handleDetailPopupKey("esc")
+	model = updated.(searchTUIModel)
+	if model.detailPopupOpen {
+		t.Fatal("detail popup stayed open after Esc")
+	}
+}
+
+func TestSearchTUISpaceTogglesExpandedRow(t *testing.T) {
+	model := testTUIModel()
+
+	updated, _ := model.handleLogsKey(" ")
+	model = updated.(searchTUIModel)
+	if len(model.expanded) != 1 {
+		t.Fatalf("expanded rows = %d, want 1", len(model.expanded))
+	}
+	view := model.View()
+	if !strings.Contains(view, "request_id: req-000") || !strings.Contains(view, "stack line") {
+		t.Fatalf("expanded row missing details:\n%s", view)
 	}
 
-	updated, _ = model.handleDetailKey("tab")
+	updated, _ = model.nextPage()
 	model = updated.(searchTUIModel)
-	if model.detailTab != tuiDetailPretty {
-		t.Fatalf("detailTab = %q, want Pretty", model.detailTab)
-	}
-	updated, _ = model.handleDetailKey("tab")
+	updated, _ = model.prevPage(false)
 	model = updated.(searchTUIModel)
-	if model.detailTab != tuiDetailRaw {
-		t.Fatalf("detailTab = %q, want Raw", model.detailTab)
+	if len(model.expanded) != 1 {
+		t.Fatalf("expanded state not preserved across cached page navigation")
 	}
-	if !strings.Contains(model.View(), "stack line") {
-		t.Fatalf("raw detail should preserve multiline message:\n%s", model.View())
+
+	updated, _ = model.handleLogsKey(" ")
+	model = updated.(searchTUIModel)
+	if len(model.expanded) != 0 {
+		t.Fatalf("expanded rows = %d, want closed", len(model.expanded))
+	}
+}
+
+func TestSearchTUIExpandedDefaultShowsAllLines(t *testing.T) {
+	model := testTUIModel()
+	model.tuiCfg.ExpandedMaxLines = defaultSearchTUIConfig().ExpandedMaxLines
+	model.messages = []*client.Message{{Message: map[string]any{
+		"timestamp":   "2026-06-25T00:09:35.855Z",
+		"level":       "INFO",
+		"source":      "api-1",
+		"message":     "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\nline21",
+		"application": "api",
+		"part":        "checkout",
+	}}}
+	model.cachedPages[0] = model.messages
+
+	lines := model.expandedLines(model.messages[0])
+	if len(lines) < 21 {
+		t.Fatalf("expanded lines = %d, want all message lines visible by default", len(lines))
+	}
+}
+
+func TestSearchTUILastLineExpansionScrollsExpandedContentIntoView(t *testing.T) {
+	model := testTUIModel()
+	model.tuiCfg.HeaderVisible = false
+	model.tuiCfg.FooterVisible = false
+	model.tuiCfg.ExpandedMaxLines = 10
+	model.height = 8
+	model.messages = testTUIResult(0, 12, 12).messages
+	model.cachedPages[0] = model.messages
+	model.selected = 11
+	model.ensureSelectedVisible()
+
+	updated, _ := model.handleLogsKey(" ")
+	model = updated.(searchTUIModel)
+	body := model.renderLogBody()
+	if !strings.Contains(body, "12   2026") {
+		t.Fatalf("last selected row is not visible after expand:\n%s", body)
+	}
+	if !strings.Contains(body, "timestamp: 2026-06-24T14:00:11.000Z") || !strings.Contains(body, "stack line") {
+		t.Fatalf("expanded content is not visible after expanding last row:\n%s", body)
+	}
+}
+
+func TestSearchTUIExpandedRowsCanBeClearedOnPageMove(t *testing.T) {
+	model := testTUIModel()
+	model.tuiCfg.PersistExpandedRows = false
+
+	updated, _ := model.handleLogsKey(" ")
+	model = updated.(searchTUIModel)
+	if len(model.expanded) != 1 {
+		t.Fatalf("expanded rows = %d, want 1", len(model.expanded))
+	}
+
+	updated, _ = model.nextPage()
+	model = updated.(searchTUIModel)
+	if len(model.expanded) != 0 {
+		t.Fatalf("expanded rows = %d, want cleared", len(model.expanded))
+	}
+}
+
+func TestSearchTUIDetailPopupScrolls(t *testing.T) {
+	model := testTUIModel()
+	model.tuiCfg.DetailPopupMaxLines = 3
+	model.detailPopupOpen = true
+
+	updated, _ := model.handleDetailPopupKey("down")
+	model = updated.(searchTUIModel)
+	if model.detailPopupScroll == 0 {
+		t.Fatal("detail popup did not scroll")
+	}
+
+	updated, _ = model.handleDetailPopupKey("esc")
+	model = updated.(searchTUIModel)
+	if model.detailPopupOpen {
+		t.Fatal("detail popup stayed open after Esc")
+	}
+}
+
+func TestSearchTUIColumnResizeAndSave(t *testing.T) {
+	oldConfigFile := ConfigFile
+	oldConfig := graylogCliConfig
+	t.Cleanup(func() {
+		ConfigFile = oldConfigFile
+		graylogCliConfig = oldConfig
+	})
+	ConfigFile = filepath.Join(t.TempDir(), "graylog.toml")
+	graylogCliConfig = GraylogCliConfig{
+		GraylogEndpoint: map[string]*GraylogLogin{"dev2": {Url: "https://example.com", UserToken: "token"}},
+		SearchTUI:       defaultSearchTUIConfig(),
+	}
+	model := testTUIModel()
+	model.resizeColumn = 0
+
+	updated, _ := model.handleLogsKey("c")
+	model = updated.(searchTUIModel)
+	if !model.columnResizeMode {
+		t.Fatal("column resize mode did not open")
+	}
+	before := model.columnWidths()[0]
+	updated, _ = model.handleColumnResizeKey("+")
+	model = updated.(searchTUIModel)
+	if got := model.columnWidths()[0]; got <= before {
+		t.Fatalf("column width = %d, want > %d", got, before)
+	}
+	updated, _ = model.handleColumnResizeKey("esc")
+	model = updated.(searchTUIModel)
+	if model.prompt.kind != tuiPromptColumnSave {
+		t.Fatalf("prompt kind = %q, want save prompt", model.prompt.kind)
+	}
+	updated, _ = model.handlePromptKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	model = updated.(searchTUIModel)
+	if _, err := os.Stat(ConfigFile); err != nil {
+		t.Fatalf("saved config missing: %v", err)
+	}
+	data, err := os.ReadFile(ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "[SearchTUI]") || !strings.Contains(string(data), "[GraylogEndpoint.dev2]") {
+		t.Fatalf("saved config did not preserve expected sections:\n%s", string(data))
 	}
 }
 
@@ -190,12 +497,57 @@ func TestSearchTUILocalFilterUsesCachedPages(t *testing.T) {
 	}
 }
 
+func TestSearchTUILocalFilterCandidatesUseUnfilteredData(t *testing.T) {
+	model := testTUIModel()
+	model.cachedPages[4] = testTUIResult(4, 4, 12).messages
+
+	model.openPrompt(tuiPromptLocalFilter, "req-006")
+	updated, cmd := model.applyPrompt()
+	model = updated.(searchTUIModel)
+	if cmd == nil {
+		t.Fatal("local filter returned nil command, want background calc")
+	}
+	model.applyCalcResult(cmd().(tuiCalcResult))
+
+	values := model.localFilterValueCandidates("request_id")
+	seen := map[string]bool{}
+	for _, value := range values {
+		seen[value.Value] = true
+	}
+	if !seen["req-000"] || !seen["req-006"] {
+		t.Fatalf("request_id candidates should use unfiltered cached data, got %#v", values)
+	}
+}
+
+func TestSearchTUILocalFilterCanBeClearedFromPrompt(t *testing.T) {
+	model := testTUIModel()
+	model.openPrompt(tuiPromptLocalFilter, "req-000")
+	updated, cmd := model.applyPrompt()
+	model = updated.(searchTUIModel)
+	if cmd == nil {
+		t.Fatal("local filter returned nil command, want background calc")
+	}
+	if model.localFilter == "" {
+		t.Fatal("local filter was not applied")
+	}
+
+	model.openPrompt(tuiPromptLocalFilter, model.localFilter)
+	updated, cmd = model.handlePromptKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	model = updated.(searchTUIModel)
+	if cmd == nil {
+		t.Fatal("clear filter returned nil command, want background calc")
+	}
+	if model.localFilter != "" || model.localFilterField != "" || model.localFilterValue != "" {
+		t.Fatalf("local filter not cleared: %q %q %q", model.localFilter, model.localFilterField, model.localFilterValue)
+	}
+}
+
 func TestSearchTUILocalFilterPromptShowsCandidates(t *testing.T) {
 	model := testTUIModel()
 	model.openPrompt(tuiPromptLocalFilter, "")
 
 	line := model.promptLine()
-	for _, want := range []string{"local filter:", "candidates", "application=api"} {
+	for _, want := range []string{"local filter:", "candidates", "application"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("prompt line = %q, missing %q", line, want)
 		}
@@ -322,8 +674,8 @@ func TestSearchTUIGroupModeOpensRepresentativeDetail(t *testing.T) {
 
 	updated, _ = model.handleLogsKey("enter")
 	model = updated.(searchTUIModel)
-	if model.view != tuiViewDetail {
-		t.Fatalf("view = %q, want detail", model.view)
+	if !model.detailPopupOpen {
+		t.Fatal("group representative detail popup did not open")
 	}
 }
 
@@ -363,43 +715,43 @@ func TestSearchTUILocalFilterCandidateSelection(t *testing.T) {
 	if model.prompt.selected != 1 {
 		t.Fatalf("prompt selected = %d, want 1", model.prompt.selected)
 	}
-	selectedFilter := model.fieldCandidatesData[1].Filter
-	if model.prompt.value != selectedFilter {
-		t.Fatalf("prompt value = %q, want selected candidate %q", model.prompt.value, selectedFilter)
+	selectedField := model.localFilterFields()[1]
+	if model.prompt.value != selectedField {
+		t.Fatalf("prompt value = %q, want selected field %q", model.prompt.value, selectedField)
 	}
-	if !strings.Contains(model.promptView(), selectedFilter) {
-		t.Fatalf("prompt view did not show selected candidate %q: %q", selectedFilter, model.promptView())
+	if !strings.Contains(model.promptView(), selectedField) {
+		t.Fatalf("prompt view did not show selected field %q: %q", selectedField, model.promptView())
 	}
+
+	updated, _ = model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(searchTUIModel)
+	if model.prompt.stage != tuiLocalFilterValueStage {
+		t.Fatalf("prompt stage = %q, want value", model.prompt.stage)
+	}
+	selectedValue := model.prompt.value
 
 	updated, cmd := model.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(searchTUIModel)
 	if cmd == nil {
 		t.Fatal("candidate enter returned nil command, want background calc")
 	}
-	if model.localFilter != selectedFilter {
-		t.Fatalf("localFilter = %q, want %q", model.localFilter, selectedFilter)
+	if model.localFilterField != selectedField || model.localFilterValue != selectedValue {
+		t.Fatalf("local filter = %s/%s, want %s/%s", model.localFilterField, model.localFilterValue, selectedField, selectedValue)
 	}
 	if len(model.visibleMessages()) == 0 {
 		t.Fatal("candidate filter removed all generated messages")
 	}
 }
 
-func TestSearchTUIDetailSearchScrollsToMatch(t *testing.T) {
+func TestSearchTUIDetailPopupShowsNestedFieldsAsPrettyValues(t *testing.T) {
 	model := testTUIModel()
-	model.view = tuiViewDetail
-	model.detailTab = tuiDetailJSONTree
+	model.detailPopupOpen = true
 
-	model.openPrompt(tuiPromptDetailSearch, "duration_ms")
-	updated, cmd := model.applyPrompt()
-	model = updated.(searchTUIModel)
-	if cmd != nil {
-		t.Fatal("detail search returned command, want nil")
-	}
-	if model.detailScroll == 0 {
-		t.Fatal("detail search did not move scroll to match")
-	}
-	if model.err != nil {
-		t.Fatalf("detail search err = %v", model.err)
+	view := model.View()
+	for _, want := range []string{"nested:", "duration_ms", "user-0"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("detail popup missing %q:\n%s", want, view)
+		}
 	}
 }
 
@@ -503,7 +855,7 @@ func TestSearchTUIRangePromptAcceptsRelativeAndAbsolute(t *testing.T) {
 	}
 }
 
-func TestSearchTUIJSONTreeParsesJSONMessageString(t *testing.T) {
+func TestSearchTUIDetailPopupPreservesJSONMessageString(t *testing.T) {
 	model := testTUIModel()
 	model.messages = []*client.Message{{Message: map[string]any{
 		"timestamp": "2026-06-24T14:00:00.000Z",
@@ -512,17 +864,12 @@ func TestSearchTUIJSONTreeParsesJSONMessageString(t *testing.T) {
 		"message":   `{"event":"checkout","items":[{"sku":"A","qty":2}],"stacktrace":"line1\nline2"}`,
 	}}}
 	model.cachedPages[0] = model.messages
-	model.view = tuiViewDetail
+	model.detailPopupOpen = true
 
 	view := model.View()
-	for _, want := range []string{"event: checkout", "items:", "sku: A", "stacktrace:", "line1", "line2"} {
+	for _, want := range []string{`message: {"event":"checkout"`, "stacktrace", "line1"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("JSON tree view missing %q:\n%s", want, view)
+			t.Fatalf("detail popup missing %q:\n%s", want, view)
 		}
-	}
-
-	model.detailTab = tuiDetailRaw
-	if !strings.Contains(model.View(), `{"event":"checkout"`) {
-		t.Fatalf("raw view did not preserve JSON message string:\n%s", model.View())
 	}
 }

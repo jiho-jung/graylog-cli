@@ -90,11 +90,54 @@ var graylogCliConfig GraylogCliConfig
 
 type GraylogCliConfig struct {
 	GraylogEndpoint map[string]*GraylogLogin // key: tier(or region), dev2/stg2/ppd2/spc-kr/spc-sg/spc-eu/spc-us
+	SearchTUI       SearchTUIConfig          `toml:"SearchTUI"`
 }
 
 type GraylogLogin struct {
 	Url       string `toml:"url"`
 	UserToken string `toml:"user-token"`
+}
+
+type SearchTUIConfig struct {
+	ExpandedMaxLines                  int                  `toml:"expanded-max-lines"`
+	DetailPopupMaxLines               int                  `toml:"detail-popup-max-lines"`
+	RowNumberWidth                    int                  `toml:"row-number-width"`
+	RowNumberMode                     string               `toml:"row-number-mode"`
+	MaxCachedPages                    int                  `toml:"max-cached-pages"`
+	PersistExpandedRows               bool                 `toml:"persist-expanded-rows"`
+	FollowRefreshPausesOnNonfirstPage bool                 `toml:"follow-refresh-pauses-on-nonfirst-page"`
+	MessageWrap                       bool                 `toml:"message-wrap"`
+	CellOverflow                      string               `toml:"cell-overflow"`
+	MinColumnWidth                    int                  `toml:"min-column-width"`
+	ColumnResizeStep                  int                  `toml:"column-resize-step"`
+	PageScrollStep                    int                  `toml:"page-scroll-step"`
+	DetailPopupWidthRatio             float64              `toml:"detail-popup-width-ratio"`
+	DetailPopupPosition               string               `toml:"detail-popup-position"`
+	DetailShowEmptyFields             bool                 `toml:"detail-show-empty-fields"`
+	DetailFields                      []string             `toml:"detail-fields"`
+	FilterCandidateFields             []string             `toml:"filter-candidate-fields"`
+	FilterCandidateLimit              int                  `toml:"filter-candidate-limit"`
+	MessagePatternCandidateLimit      int                  `toml:"message-pattern-candidate-limit"`
+	FilterMatchMode                   string               `toml:"filter-match-mode"`
+	FilterCaseSensitive               bool                 `toml:"filter-case-sensitive"`
+	HeaderVisible                     bool                 `toml:"header-visible"`
+	FooterVisible                     bool                 `toml:"footer-visible"`
+	HeaderBoxGap                      int                  `toml:"header-box-gap"`
+	FooterBoxGap                      int                  `toml:"footer-box-gap"`
+	BoxOverflow                       string               `toml:"box-overflow"`
+	Columns                           []SearchTUIColumn    `toml:"columns"`
+	HeaderBoxes                       []SearchTUIOutputBox `toml:"header-boxes"`
+	FooterBoxes                       []SearchTUIOutputBox `toml:"footer-boxes"`
+}
+
+type SearchTUIColumn struct {
+	Field string `toml:"field"`
+	Width int    `toml:"width"`
+}
+
+type SearchTUIOutputBox struct {
+	Name  string `toml:"name"`
+	Width int    `toml:"width"`
 }
 
 func getGraylogConfig() *GraylogLogin {
@@ -104,6 +147,31 @@ func getGraylogConfig() *GraylogLogin {
 	}
 
 	return cfg
+}
+
+func saveSearchTUIColumns(columns []SearchTUIColumn) error {
+	if strings.HasPrefix(ConfigFile, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil && home != "" {
+			ConfigFile = filepath.Join(home, ConfigFile[2:])
+		}
+	}
+	if graylogCliConfig.GraylogEndpoint == nil {
+		graylogCliConfig.GraylogEndpoint = map[string]*GraylogLogin{}
+	}
+	graylogCliConfig.SearchTUI.Columns = columns
+	if err := os.MkdirAll(filepath.Dir(ConfigFile), 0o755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	file, err := os.Create(ConfigFile)
+	if err != nil {
+		return fmt.Errorf("open config for write: %w", err)
+	}
+	defer file.Close()
+	if err := toml.NewEncoder(file).Encode(graylogCliConfig); err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	return nil
 }
 
 func init() {
@@ -131,6 +199,7 @@ func initConfig() {
 		}
 	}
 
+	graylogCliConfig.SearchTUI = defaultSearchTUIConfig()
 	if _, err := os.Stat(ConfigFile); os.IsNotExist(err) {
 		// file does not exist
 	} else if err != nil {

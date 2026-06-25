@@ -31,7 +31,7 @@ v2의 목표는 Graylog 검색 결과를 터미널 안에서 테이블 형태로
 ├──────┼──────────────────────┼────────┼────────────────────┼────────────────┤
 │ 021  │ 2026-06-24 14:01:22  │ ERROR  │ api-1              │ failed to call │
 │ 022  │ 2026-06-24 14:01:18  │ WARN   │ api-2              │ retrying req   │
-│▶023  │ 2026-06-24 14:01:03  │ ERROR  │ api-1              │ timeout while  │
+│ 023  │ 2026-06-24 14:01:03  │ ERROR  │ api-1              │ timeout while  │
 │      │ message: timeout while fetching backend response                    │
 │      │ request_id: abc-123 | application: api | part: checkout             │
 │ 024  │ 2026-06-24 14:00:58  │ INFO   │ api-4              │ accepted       │
@@ -81,6 +81,8 @@ Header는 편집 가능한 영역이 아니다. 검색 조건 변경은 단축�
 
 Header는 항목별 고정폭 output box로 렌더링한다. 예를 들어 `view`, `range`, `query`, `page`, `sort`, `filter`, `refresh`는 각각 독립 box를 가지며, box 순서와 폭은 config로 지정할 수 있다. 값이 길어도 box 폭은 변하지 않고 내부 값만 clipping한다. Footer도 같은 방식으로 `status`, `row`, `cached-pages`, `refreshed` 같은 항목을 고정폭 box로 표시한다.
 
+화면은 Header, Body, Footer를 각각 독립 `viewport.Model`로 보유하고 렌더링한다. 세 viewport는 서로 다른 테두리 box로 감싸 화면 영역을 명확히 분리한다. Header/Footer는 스크롤 대상이 아니며, Body만 로그 목록, 그룹, 히스토그램, 상세 팝업 배경의 주 표시 영역으로 사용한다. 프롬프트가 열리면 별도 네 번째 영역을 만들지 않고 Footer viewport의 첫 줄에 포함한다.
+
 ## Body Table
 
 Body는 config 기반 컬럼 테이블로 구성한다. 첫 번째 컬럼은 항상 일련번호(`#`)이며 데이터 컬럼 설정과 별도로 표시한다. 일련번호는 기본적으로 서버 offset 기준 전역 번호이고, config의 `row-number-mode`가 `page`이면 현재 페이지 내부 번호로 표시한다.
@@ -95,11 +97,13 @@ config가 없을 때 기본 데이터 컬럼은 다음 순서를 따른다.
 
 컬럼 목록과 폭은 config의 `SearchTUI.columns`로 지정할 수 있다. `--fields`로 지정한 필드는 config 컬럼 뒤에 중복 없이 추가한다. config에 폭이 없는 추가 필드는 남은 폭을 나눠 갖고, 터미널 폭이 부족하면 오른쪽 컬럼부터 줄이며 셀 내용은 clipping한다.
 
-목록 화면의 모든 로그 행은 기본 1줄로 표시한다. 긴 `message`와 JSON 문자열은 원문 앞부분을 `message` 컬럼 폭에 맞게 clipping한다. 선택 행에서 `Space`를 누르면 해당 로그를 펼치고, 다시 누르면 닫는다. 펼침 영역은 데이터에 맞춰 필요한 줄 수만 사용하되 `expanded-max-lines`를 넘지 않는다. 기본 최대값은 20줄이다.
+목록 화면의 모든 로그 행은 기본 1줄로 표시한다. 긴 `message`와 JSON 문자열은 원문 앞부분을 `message` 컬럼 폭에 맞게 clipping한다. 각 row는 Header/Body/Footer 테두리 안쪽 viewport 폭을 넘지 않도록 최종 라인 전체를 한 번 더 clipping해 터미널 자동 줄바꿈이 발생하지 않게 한다. 선택 행에서 `Space`를 누르면 해당 로그를 펼치고, 다시 누르면 닫는다. 펼침 영역은 데이터에 맞춰 필요한 줄 수를 사용한다. `expanded-max-lines`가 양수이면 해당 줄 수로 제한하고, 기본값 `0`은 제한 없이 모든 펼침 라인을 표시한다.
 
 펼침 상태는 선택 로그의 stable key로 보존한다. 키 우선순위는 `gl2_message_id`, `_id`, 없으면 `offset:index`이다. `persist-expanded-rows`가 true이면 스크롤, 페이지 이동, 캐시된 페이지 복귀 사이에서도 펼침 상태를 유지한다. 캐시에서 제거된 페이지의 펼침 상태는 함께 제거할 수 있다.
 
-선택된 로그는 특정 셀만이 아니라 행 전체를 선택 상태로 표시한다. 하이라이트는 `timestamp`, `level`, `source`, `message`, 추가 필드를 포함한 전체 라인 폭에 적용한다. 선택 커서(`▶`)는 행의 시작에 표시하고, 사용자가 현재 선택한 로그를 테이블 전체 너비에서 바로 인지할 수 있게 한다.
+Body 스크롤은 로그 행 index가 아니라 실제 렌더링 라인 index를 기준으로 계산한다. 일반 로그 행은 1줄이고, 펼쳐진 로그는 `expanded-max-lines`까지 추가 라인을 차지한다. 선택 행이 Body 마지막 표시 줄을 넘어가면 `page-scroll-step` 설정값만큼 화면을 이동하되, 선택 행이 화면 밖으로 사라지지 않도록 보정한다.
+
+선택된 로그는 특정 셀만이 아니라 행 전체를 선택 상태로 표시한다. 하이라이트는 `timestamp`, `level`, `source`, `message`, 추가 필드를 포함한 전체 라인 폭에 적용한다. 선택 행 앞에 별도 커서 문자(`▶` 등)는 표시하지 않는다.
 
 테이블 정렬은 TUI 안에서 컬럼과 방향을 선택해 변경한다. 정렬 변경은 서버 재조회가 필요한 검색 옵션 변경으로 취급한다. v2의 sort는 단일 필드만 지원한다. 새 sort를 적용하면 기존 sort는 교체된다.
 
@@ -117,6 +121,7 @@ Global keys:
 Logs view:
 
 - `up/down`: 선택 로그 행 이동
+- `PgUp/PgDn`: `page-scroll-step` 설정값만큼 선택 로그 행 이동
 - `left/right`, `p/n`: 이전/다음 페이지
 - `g`: 페이지 이동 프롬프트
 - `r`: 현재 조건으로 재조회
@@ -167,10 +172,12 @@ Local filter prompt:
 
 - 필드 선택 단계 `up/down`: candidate 필드명 선택 이동
 - 필드 선택 단계 `Enter`: 선택한 필드의 값 선택 단계로 진입
+- 필드 선택 단계 `Ctrl+U` 또는 빈 입력 `Enter`: 현재 로컬 필터 삭제
 - 필드 선택 단계 `Esc`: 프롬프트 닫기
 - 값 선택 단계 `up/down`: candidate 값 선택 이동
 - 값 선택 단계 텍스트 입력: 직접 입력값 갱신
 - 값 선택 단계 `Enter`: 선택 후보 또는 직접 입력값으로 로컬 필터 적용
+- 값 선택 단계 `Ctrl+U` 또는 빈 입력 `Enter`: 현재 로컬 필터 삭제
 - 값 선택 단계 `Esc`: 필드 선택 단계로 복귀
 
 Histogram view:
@@ -238,12 +245,13 @@ Body는 원본 로그 테이블과 유사 로그 그룹 보기 모드를 가진�
 
 그룹 보기에서도 선택한 그룹에 `Enter`를 누르면 대표 로그의 상세 팝업을 연다. 그룹 내부의 개별 로그 탐색은 v2 범위에서는 별도 drill-down 화면으로 만들지 않고, 로컬 필터나 서버 query를 좁혀 원본 테이블에서 확인한다.
 
-로컬 필터 프롬프트는 현재 캐시된 결과에서 후보를 만들고, `필드 선택 -> 값 선택/입력 -> 적용` 흐름으로 동작한다. 사용자가 `f`를 누르면 필드 후보 목록을 보여준다. 필드 후보는 `level`, `source`, `application`, `part`, `message`, 그리고 표시 중인 field 중 `timestamp`를 제외한 값을 사용한다.
+로컬 필터 프롬프트는 현재 캐시된 원본 결과에서 후보를 만들고, `필드 선택 -> 값 선택/입력 -> 적용` 흐름으로 동작한다. 로컬 필터가 이미 적용된 상태에서도 candidate 필드와 값은 필터 적용 전의 캐시 원본 데이터를 기준으로 보여준다. 사용자가 `f`를 누르면 필드 후보 목록을 보여준다. 필드 후보는 `level`, `source`, `application`, `part`, `message`, 그리고 표시 중인 field 중 `timestamp`를 제외한 값을 사용한다.
 
 필드 선택 단계의 키맵은 다음과 같다.
 
 - `up/down`: candidate 필드명 선택 이동
 - `Enter`: 선택한 필드의 값 선택 단계로 진입
+- `Ctrl+U` 또는 빈 입력 `Enter`: 현재 로컬 필터 삭제
 - `Esc`: 프롬프트 닫기
 
 값 선택 단계는 선택한 필드의 후보 값과 count를 보여준다. 일반 필드는 distinct value와 count를 후보로 보여준다. `message` 필드는 전체 원문을 후보로 나열하지 않고, 숫자 토큰을 `<num>`으로 정규화한 짧은 message pattern 후보와 count를 보여준다. 이 단계에서도 사용자는 후보 선택 대신 직접 텍스트를 입력할 수 있다.
@@ -253,6 +261,7 @@ Body는 원본 로그 테이블과 유사 로그 그룹 보기 모드를 가진�
 - `up/down`: candidate 값 선택 이동
 - 텍스트 입력: 직접 입력값 갱신
 - `Enter`: 선택 후보 또는 직접 입력값으로 로컬 필터 적용
+- `Ctrl+U` 또는 빈 입력 `Enter`: 현재 로컬 필터 삭제
 - `Esc`: 필드 선택 단계로 복귀
 
 후보 선택으로 적용된 로컬 필터는 `field contains value` 방식으로 평가한다. 예를 들어 `source` 필드에서 `api-1` 값을 선택하면 `source contains "api-1"`로 캐시된 메시지를 거르고, `message` 필드에서 pattern 또는 직접 입력값을 적용하면 `message contains "..."`로 거른다. 로컬 필터는 한 번에 하나만 적용한다.
@@ -265,11 +274,13 @@ Body는 원본 로그 테이블과 유사 로그 그룹 보기 모드를 가진�
 
 목록 행은 기본적으로 항상 1줄이다. 긴 `message`, 멀티라인 문자열, JSON 문자열은 컬럼 폭에 맞게 clipping한다. 사용자가 `Space`를 누르면 선택 로그 아래에 펼침 영역을 추가해 주요 필드와 message 내용을 여러 줄로 보여준다.
 
-펼침 영역은 데이터 줄 수에 맞춰 높이를 정한다. 최대 높이는 `SearchTUI.expanded-max-lines`로 제한하고 기본값은 20줄이다. `SearchTUI.message-wrap`이 true이면 message를 펼침 영역 폭에 맞춰 wrap한다. false이면 원문 줄 단위로만 나누고 긴 줄은 clipping한다.
+펼침 영역은 데이터 줄 수에 맞춰 높이를 정한다. `SearchTUI.expanded-max-lines`가 양수이면 최대 높이를 해당 줄 수로 제한하고, 기본값 `0`이면 제한 없이 모든 펼침 라인을 표시한다. `SearchTUI.message-wrap`이 true이면 message를 펼침 영역 폭에 맞춰 wrap한다. false이면 원문 줄 단위로만 나누고 긴 줄은 clipping한다.
 
 `Enter`를 누르면 선택 로그의 상세 팝업을 연다. 상세 팝업은 화면 전환이 아니라 현재 logs view 위에 겹쳐 표시한다. 팝업은 Pretty 단일뷰이며, `SearchTUI.detail-fields`에 지정된 필드를 우선 표시하고 나머지 필드는 정렬된 key/value 목록으로 이어서 표시한다. 빈 값은 기본적으로 숨기고, `detail-show-empty-fields`가 true이면 빈 필드도 표시한다.
 
 상세 팝업 높이는 데이터 줄 수에 맞추되 `SearchTUI.detail-popup-max-lines`를 넘지 않는다. 기본값은 20줄이다. 내용이 더 많으면 `up/down`, `PgUp/PgDn`, `Home/End`로 팝업 내부를 스크롤한다. `Esc`를 누르면 팝업만 닫고 logs view 선택 행과 스크롤 위치는 유지한다.
+
+상세 팝업 테두리는 Header/Body/Footer의 일반 테두리와 구분되도록 굵은 border를 사용한다.
 
 ## Status/Help Footer
 
@@ -294,7 +305,7 @@ TUI 설정은 기존 config 파일의 `[SearchTUI]` 섹션에 둔다. 항목명�
 
 ```toml
 [SearchTUI]
-expanded-max-lines = 20
+expanded-max-lines = 0
 detail-popup-max-lines = 20
 row-number-width = 4
 row-number-mode = "absolute"
@@ -306,8 +317,7 @@ message-wrap = true
 cell-overflow = "clip"
 min-column-width = 4
 column-resize-step = 2
-show-row-cursor = true
-
+page-scroll-step = 10
 detail-popup-width-ratio = 0.85
 detail-popup-position = "center"
 detail-show-empty-fields = false
@@ -380,7 +390,7 @@ width = 18
 
 항목 설명:
 
-- `expanded-max-lines`: integer, default `20`. `Space` 펼침 영역의 최대 줄 수다. 데이터가 짧으면 실제 줄 수만 사용한다.
+- `expanded-max-lines`: integer, default `0`. `Space` 펼침 영역의 최대 줄 수다. `0`이면 제한 없이 모든 펼침 라인을 표시하고, 양수이면 해당 줄 수로 제한한다.
 - `detail-popup-max-lines`: integer, default `20`. `Enter` 상세 팝업의 최대 줄 수다. 초과 내용은 팝업 내부 스크롤로 본다.
 - `row-number-width`: integer, default `4`. 첫 번째 일련번호 컬럼 폭이다.
 - `row-number-mode`: string, default `absolute`, allowed `absolute`, `page`. `absolute`는 `offset + row index + 1`, `page`는 페이지 내부 번호를 표시한다.
@@ -391,7 +401,7 @@ width = 18
 - `cell-overflow`: string, default `clip`, v2 allowed `clip`. 1줄 셀 내용이 컬럼 폭보다 길 때 처리 방식이다.
 - `min-column-width`: integer, default `4`. 컬럼 폭 조정 시 허용하는 최소 폭이다.
 - `column-resize-step`: integer, default `2`. `+` 또는 `-` 한 번에 조정할 컬럼 폭이다.
-- `show-row-cursor`: boolean, default `true`. 선택 행 앞의 커서 표시 여부다.
+- `page-scroll-step`: integer, default `10`. `PgUp` 또는 `PgDn` 한 번에 이동할 로그 행 수다. `up/down`은 항상 한 줄씩 이동한다.
 - `detail-popup-width-ratio`: float, default `0.85`. 상세 팝업 폭을 터미널 폭 대비 비율로 정한다.
 - `detail-popup-position`: string, default `center`, allowed `center`, `right`, `bottom`. 상세 팝업 위치다.
 - `detail-show-empty-fields`: boolean, default `false`. 상세 팝업에서 빈 필드를 표시할지 정한다.
